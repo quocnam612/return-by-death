@@ -1,0 +1,13 @@
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+[Bb]in/
+[Ob]j/
+obj/
+bin/
+output/
+*.log
+.DS_Store
