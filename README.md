@@ -1,0 +1,6 @@
+# Return By Death SFX
+
+Replaces game audio events with the iconic sound effect from *Re:Zero*.
+
+* **The Witch's Call:** Triggers instantly when encountering a **Forest Giant** (old witch sound) or spotting a **Dead Body** (new witch sound).
+* **Return by death:** Replaces the **Teleport** sound with return by death sound, works with teleport trap in lethal things mod
