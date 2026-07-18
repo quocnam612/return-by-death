@@ -69,6 +69,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Patches\DeadBodyInfoPatch.cs" />
     <Compile Include="Patches\LethalThingsPatch.cs" />
     <Compile Include="Patches\ShipTeleporterPatch.cs" />
     <Compile Include="Patches\SoundManagerPatch.cs" />

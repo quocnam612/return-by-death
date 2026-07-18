@@ -1,17 +1,25 @@
-﻿using HarmonyLib;
-using LethalThings.MonoBehaviours;
-using UnityEngine;
+using HarmonyLib;
+using System;
+using System.Reflection;
 
 namespace ReturnByDeath.Patches
 {
-    [HarmonyPatch(typeof(TeleporterTrap))]
     internal class LethalThingsPatch
     {
-        [HarmonyPatch("__initializeVariables")]
-        [HarmonyPostfix]
-        static void OverrideAudio(TeleporterTrap __instance)
+        internal static void Apply(Harmony harmony)
         {
-            __instance.teleporterBeamUpSFX = ReturnByDeathBase.SoundFX[0];
+            Type teleporterTrap = AccessTools.TypeByName("LethalThings.MonoBehaviours.TeleporterTrap");
+            if (teleporterTrap == null)
+                return;
+
+            MethodInfo initializeVariables = AccessTools.Method(teleporterTrap, "__initializeVariables");
+            if (initializeVariables != null)
+                harmony.Patch(initializeVariables, postfix: new HarmonyMethod(typeof(LethalThingsPatch), nameof(OverrideAudio)));
+        }
+
+        static void OverrideAudio(object __instance)
+        {
+            AccessTools.Field(__instance.GetType(), "teleporterBeamUpSFX")?.SetValue(__instance, ReturnByDeathBase.SoundFX[0]);
         }
     }
 }

@@ -40,8 +40,9 @@ namespace ReturnByDeath
 
             harmony.PatchAll(typeof(ReturnByDeathBase));
             harmony.PatchAll(typeof(SoundManagerPatch));
+            harmony.PatchAll(typeof(DeadBodyInfoPatch));
             harmony.PatchAll(typeof(ShipTeleporterPatch));
-            harmony.PatchAll(typeof(LethalThingsPatch));
+            LethalThingsPatch.Apply(harmony);
 
             mls = Logger;
 

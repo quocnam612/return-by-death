@@ -7,7 +7,6 @@ namespace ReturnByDeath.Patches
     internal class SoundManagerPatch
     {
         private static AudioSource witchAudioSource;
-        private static bool isFadingOut = false;
         private static int currentWitchTrack = -1;
 
         public static bool hasJustDiscoveredBody = false;
@@ -37,13 +36,18 @@ namespace ReturnByDeath.Patches
             {
                 witchAudioSource.volume = 0f;
                 witchAudioSource.Stop();
-                isFadingOut = false;
                 currentWitchTrack = -1;
                 hasJustDiscoveredBody = false;
                 return;
             }
 
             float fearLevel = StartOfRound.Instance.fearLevel;
+
+            if (hasJustDiscoveredBody && currentWitchTrack == 2 && !witchAudioSource.isPlaying)
+            {
+                hasJustDiscoveredBody = false;
+                currentWitchTrack = -1;
+            }
 
             int targetTrack = -1;
 
@@ -58,8 +62,6 @@ namespace ReturnByDeath.Patches
 
             if (targetTrack != -1)
             {
-                isFadingOut = false;
-
                 if (currentWitchTrack != targetTrack || !witchAudioSource.isPlaying)
                 {
                     currentWitchTrack = targetTrack;
@@ -67,6 +69,7 @@ namespace ReturnByDeath.Patches
                     if (ReturnByDeathBase.SoundFX != null && ReturnByDeathBase.SoundFX.Count > targetTrack)
                     {
                         witchAudioSource.clip = ReturnByDeathBase.SoundFX[targetTrack];
+                        witchAudioSource.loop = targetTrack != 2;
                         witchAudioSource.time = 0f;
                         witchAudioSource.Play();
                     }
@@ -79,14 +82,12 @@ namespace ReturnByDeath.Patches
             {
                 if (witchAudioSource.isPlaying)
                 {
-                    isFadingOut = true;
                     witchAudioSource.volume = Mathf.Lerp(witchAudioSource.volume, 0f, 2f * Time.deltaTime);
 
                     if (witchAudioSource.volume < 0.01f)
                     {
                         witchAudioSource.Stop();
                         witchAudioSource.volume = 0f;
-                        isFadingOut = false;
                         currentWitchTrack = -1;
                         hasJustDiscoveredBody = false;
                     }
