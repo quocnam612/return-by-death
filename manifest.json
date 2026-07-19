@@ -1,0 +1,10 @@
+{
+    "name": "Rezero_ReturnByDeath",
+    "author": "quocnam612",
+    "version_number": "2.0.2",
+    "website_url": "https://github.com/quocnam612/return-by-death",
+    "description": "Configurable, Replace teleport sound with return by death sound, intense fear sound with witch sound, icecream truck delivery with subaru's phone ring.",
+    "dependencies": [
+		"BepInEx-BepInExPack-5.4.2305"
+    ]
+}

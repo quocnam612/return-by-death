@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using UnityEngine;
 
 namespace ReturnByDeath.Patches
 {
@@ -15,7 +16,21 @@ namespace ReturnByDeath.Patches
         [HarmonyPostfix]
         static void OverrideAudio(ShipTeleporter __instance)
         {
-            __instance.teleporterBeamUpSFX = ReturnByDeathBase.SoundFX[0];
+            ApplySound(__instance);
+        }
+
+        internal static void ApplyToExisting()
+        {
+            foreach (ShipTeleporter teleporter in Resources.FindObjectsOfTypeAll<ShipTeleporter>())
+                ApplySound(teleporter);
+        }
+
+        private static void ApplySound(ShipTeleporter teleporter)
+        {
+            if (!ReturnByDeathBase.EnableRbdSFX.Value) return;
+
+            if (ReturnByDeathBase.SoundFX != null && ReturnByDeathBase.SoundFX.Count > 0 && ReturnByDeathBase.SoundFX[0] != null)
+                teleporter.teleporterBeamUpSFX = ReturnByDeathBase.SoundFX[0];
         }
     }
 }

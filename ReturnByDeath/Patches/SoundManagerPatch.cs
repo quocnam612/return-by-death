@@ -8,7 +8,6 @@ namespace ReturnByDeath.Patches
     {
         private static AudioSource witchAudioSource;
         private static int currentWitchTrack = -1;
-
         public static bool hasJustDiscoveredBody = false;
 
         [HarmonyPatch("Start")]
@@ -23,6 +22,7 @@ namespace ReturnByDeath.Patches
 
         public static void TriggerWitch2()
         {
+            if (!ReturnByDeathBase.EnableWitchSFX.Value) return;
             hasJustDiscoveredBody = true;
         }
 
@@ -30,7 +30,7 @@ namespace ReturnByDeath.Patches
         [HarmonyPostfix]
         static void UpdateWitchFearAudio(SoundManager __instance)
         {
-            if (witchAudioSource == null) return;
+            if (!ReturnByDeathBase.EnableWitchSFX.Value || witchAudioSource == null) return;
 
             if (GameNetworkManager.Instance.localPlayerController.isPlayerDead)
             {

@@ -1,12 +1,11 @@
 ﻿using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using ReturnByDeath.Patches;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.IO;
 using UnityEngine;
 
 namespace ReturnByDeath
@@ -16,7 +15,7 @@ namespace ReturnByDeath
     {
         private const string modGUID = "quocnam612.ReturnByDeath";
         private const string modName = "Rezero Return By Death SFX";
-        private const string modVersion = "1.0.0";
+        private const string modVersion = "2.0.2";
 
         private readonly Harmony harmony = new Harmony(modGUID);
 
@@ -25,7 +24,10 @@ namespace ReturnByDeath
         internal ManualLogSource mls;
 
         internal static List<AudioClip> SoundFX;
-        internal static AssetBundle Bundle;
+
+        public static ConfigEntry<bool> EnableRbdSFX;
+        public static ConfigEntry<bool> EnableWitchSFX;
+        public static ConfigEntry<bool> EnableRingSFX;
 
         void Awake()
         {
@@ -35,29 +37,128 @@ namespace ReturnByDeath
             }
 
             mls = BepInEx.Logging.Logger.CreateLogSource(modGUID);
-
             mls.LogInfo($"[{modName}] v{modVersion} is loaded!");
+
+            EnableRbdSFX = Config.Bind(
+                "Audio Toggles", 
+                "EnableReturnByDeathSFX", 
+                true, 
+                "Toggle whether the Return By Death SFX (when player teleport)  is enabled."
+            );
+
+            EnableWitchSFX = Config.Bind(
+                "Audio Toggles", 
+                "EnableWitchSFX", 
+                true, 
+                "Toggle whether the Witch SFX (when a dead body is seen and intense fear reached) is enabled."
+            );
+
+            EnableRingSFX = Config.Bind(
+                "Audio Toggles", 
+                "EnableRingSFX", 
+                true, 
+                "Toggle whether the Truck delivery music (Subaru phone ring) is enabled."
+            );
+
+            SoundFX = new List<AudioClip> { null, null, null, null, null };
+            LoadSounds();
 
             harmony.PatchAll(typeof(ReturnByDeathBase));
             harmony.PatchAll(typeof(SoundManagerPatch));
             harmony.PatchAll(typeof(DeadBodyInfoPatch));
+            harmony.PatchAll(typeof(ItemDropshipAudioPatch));
             harmony.PatchAll(typeof(ShipTeleporterPatch));
             LethalThingsPatch.Apply(harmony);
 
             mls = Logger;
+        }
 
-            SoundFX = new List<AudioClip>();
-            string FolderLocation = Instance.Info.Location;
-            FolderLocation = FolderLocation.TrimEnd("ReturnByDeath.dll".ToCharArray());
-            Bundle = AssetBundle.LoadFromFile(FolderLocation + "rbd");
-            if (Bundle != null)
+        private void LoadSounds()
+        {
+            string soundsFolder = Path.Combine(Path.GetDirectoryName(Info.Location), "sounds");
+            string[] soundFiles = { "rbd.wav", "witch1.wav", "witch2.wav", "ring.wav", "ringfar.wav" };
+
+            for (int i = 0; i < soundFiles.Length; i++)
             {
-                mls.LogMessage($"[{modName}] Successfully loaded AssetBundle from {FolderLocation + "rbd"}");
-                SoundFX = Bundle.LoadAllAssets<AudioClip>().ToList();
+                string soundFile = soundFiles[i];
+                string soundPath = Path.Combine(soundsFolder, soundFile);
+                if (!File.Exists(soundPath))
+                {
+                    mls.LogError($"Missing sound file: {soundPath}");
+                    continue;
+                }
+
+                try
+                {
+                    AudioClip clip = LoadWav(soundPath);
+                    SoundFX[i] = clip;
+                    mls.LogInfo($"Loaded {soundFile} as SoundFX[{i}]");
+                }
+                catch (Exception exception)
+                {
+                    mls.LogError($"Failed to load {soundFile}: {exception.Message}");
+                }
             }
-            else
+
+            ShipTeleporterPatch.ApplyToExisting();
+            LethalThingsPatch.ApplyToExisting();
+        }
+
+        private static AudioClip LoadWav(string path)
+        {
+            using (BinaryReader reader = new BinaryReader(File.OpenRead(path)))
             {
-                mls.LogError($"[{modName}] Failed to load AssetBundle from {FolderLocation + "rbd"}");
+                if (new string(reader.ReadChars(4)) != "RIFF")
+                    throw new InvalidDataException("Not a WAV file.");
+
+                reader.ReadInt32();
+                if (new string(reader.ReadChars(4)) != "WAVE")
+                    throw new InvalidDataException("Not a WAV file.");
+
+                short format = 0;
+                short channels = 0;
+                int sampleRate = 0;
+                short bitsPerSample = 0;
+                byte[] audioData = null;
+
+                while (reader.BaseStream.Position < reader.BaseStream.Length)
+                {
+                    string chunkId = new string(reader.ReadChars(4));
+                    int chunkSize = reader.ReadInt32();
+
+                    if (chunkId == "fmt ")
+                    {
+                        format = reader.ReadInt16();
+                        channels = reader.ReadInt16();
+                        sampleRate = reader.ReadInt32();
+                        reader.ReadInt32();
+                        reader.ReadInt16();
+                        bitsPerSample = reader.ReadInt16();
+                        reader.BaseStream.Position += chunkSize - 16;
+                    }
+                    else if (chunkId == "data")
+                    {
+                        audioData = reader.ReadBytes(chunkSize);
+                    }
+                    else
+                    {
+                        reader.BaseStream.Position += chunkSize;
+                    }
+
+                    if (chunkSize % 2 != 0)
+                        reader.BaseStream.Position++;
+                }
+
+                if (format != 1 || bitsPerSample != 16 || channels <= 0 || audioData == null)
+                    throw new InvalidDataException("Only 16-bit PCM WAV files are supported.");
+
+                float[] samples = new float[audioData.Length / 2];
+                for (int i = 0; i < samples.Length; i++)
+                    samples[i] = BitConverter.ToInt16(audioData, i * 2) / 32768f;
+
+                AudioClip clip = AudioClip.Create(Path.GetFileNameWithoutExtension(path), samples.Length / channels, channels, sampleRate, false);
+                clip.SetData(samples, 0);
+                return clip;
             }
         }
     }
