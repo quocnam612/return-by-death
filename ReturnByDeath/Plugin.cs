@@ -4,6 +4,7 @@ using BepInEx.Logging;
 using HarmonyLib;
 using ReturnByDeath.Patches;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -28,6 +29,7 @@ namespace ReturnByDeath
         public static ConfigEntry<bool> EnableRbdSFX;
         public static ConfigEntry<bool> EnableWitchSFX;
         public static ConfigEntry<bool> EnableRingSFX;
+        public static ConfigEntry<bool> EnableReturnByDeath;
 
         void Awake()
         {
@@ -60,6 +62,13 @@ namespace ReturnByDeath
                 "Toggle whether the Truck delivery music (Subaru phone ring) is enabled."
             );
 
+            EnableReturnByDeath = Config.Bind(
+                "Gameplay",
+                "EnableReturnByDeath",
+                false,
+                "Saves the local player's state every minute and restores it when otherwise-lethal damage is taken. Intended for single-player or consented private lobbies."
+            );
+
             SoundFX = new List<AudioClip> { null, null, null, null, null };
             LoadSounds();
 
@@ -68,9 +77,21 @@ namespace ReturnByDeath
             harmony.PatchAll(typeof(DeadBodyInfoPatch));
             harmony.PatchAll(typeof(ItemDropshipAudioPatch));
             harmony.PatchAll(typeof(ShipTeleporterPatch));
+            harmony.PatchAll(typeof(PlayerControllerPatch));
             LethalThingsPatch.Apply(harmony);
 
+            StartCoroutine(SaveCheckpointRoutine());
+
             mls = Logger;
+        }
+
+        private IEnumerator SaveCheckpointRoutine()
+        {
+            while (true)
+            {
+                PlayerControllerPatch.SaveLocalPlayerCheckpoint();
+                yield return new WaitForSeconds(60f);
+            }
         }
 
         private void LoadSounds()
