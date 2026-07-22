@@ -4,7 +4,6 @@ using BepInEx.Logging;
 using HarmonyLib;
 using ReturnByDeath.Patches;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -17,19 +16,19 @@ namespace ReturnByDeath
         private const string modGUID = "quocnam612.ReturnByDeath";
         private const string modName = "Rezero Return By Death SFX";
         private const string modVersion = "2.0.2";
-
         private readonly Harmony harmony = new Harmony(modGUID);
-
         public static ReturnByDeathBase Instance;
-
         internal ManualLogSource mls;
-
         internal static List<AudioClip> SoundFX;
-
+        
+        // Audio Config
         public static ConfigEntry<bool> EnableRbdSFX;
         public static ConfigEntry<bool> EnableWitchSFX;
         public static ConfigEntry<bool> EnableRingSFX;
+
+        // Gameplay Config
         public static ConfigEntry<bool> EnableReturnByDeath;
+        public static ConfigEntry<string> ManualSaveKey;
 
         void Awake()
         {
@@ -69,29 +68,30 @@ namespace ReturnByDeath
                 "Saves the local player's state every minute and restores it when otherwise-lethal damage is taken. Intended for single-player or consented private lobbies."
             );
 
+            ManualSaveKey = Config.Bind(
+            "Debug", 
+            "ManualSaveKey", 
+            "F5", 
+            "Binding save checkpoint");
+
             SoundFX = new List<AudioClip> { null, null, null, null, null };
             LoadSounds();
 
+            // Audio
             harmony.PatchAll(typeof(ReturnByDeathBase));
             harmony.PatchAll(typeof(SoundManagerPatch));
             harmony.PatchAll(typeof(DeadBodyInfoPatch));
             harmony.PatchAll(typeof(ItemDropshipAudioPatch));
             harmony.PatchAll(typeof(ShipTeleporterPatch));
+
+            // Gameplay
             harmony.PatchAll(typeof(PlayerControllerPatch));
+            harmony.PatchAll(typeof(LandminePatch));
+            harmony.PatchAll(typeof(HoarderBugPatch));
+            harmony.PatchAll(typeof(GrabbableObjectPatch));
+
             LethalThingsPatch.Apply(harmony);
-
-            StartCoroutine(SaveCheckpointRoutine());
-
             mls = Logger;
-        }
-
-        private IEnumerator SaveCheckpointRoutine()
-        {
-            while (true)
-            {
-                PlayerControllerPatch.SaveLocalPlayerCheckpoint();
-                yield return new WaitForSeconds(60f);
-            }
         }
 
         private void LoadSounds()

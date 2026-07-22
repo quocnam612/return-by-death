@@ -7,6 +7,7 @@ namespace ReturnByDeath.Patches
     internal class SoundManagerPatch
     {
         private static AudioSource witchAudioSource;
+        private static AudioSource returnByDeathAudioSource;
         private static int currentWitchTrack = -1;
         public static bool hasJustDiscoveredBody = false;
 
@@ -18,6 +19,21 @@ namespace ReturnByDeath.Patches
             witchAudioSource.playOnAwake = false;
             witchAudioSource.loop = true;
             witchAudioSource.volume = 0f;
+
+            returnByDeathAudioSource = __instance.gameObject.AddComponent<AudioSource>();
+            returnByDeathAudioSource.playOnAwake = false;
+            returnByDeathAudioSource.spatialBlend = 0f;
+            returnByDeathAudioSource.spatialize = false;
+        }
+
+        public static void PlayReturnByDeathSound()
+        {
+            if (returnByDeathAudioSource == null
+                || ReturnByDeathBase.SoundFX == null
+                || ReturnByDeathBase.SoundFX.Count == 0
+                || ReturnByDeathBase.SoundFX[0] == null) return;
+
+            returnByDeathAudioSource.PlayOneShot(ReturnByDeathBase.SoundFX[0]);
         }
 
         public static void TriggerWitch2()
@@ -55,7 +71,7 @@ namespace ReturnByDeath.Patches
             {
                 targetTrack = 2;
             }
-            else if (fearLevel > 0.4f)
+            else if (fearLevel > 0.7f)
             {
                 targetTrack = 1;
             }
