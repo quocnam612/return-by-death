@@ -83,9 +83,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Data\DoorCheckpointData.cs" />
     <Compile Include="Data\WorldScrapCheckpointData.cs" />
     <Compile Include="Patches\DeadBodyInfoPatch.cs" />
+    <Compile Include="Patches\EnemyAIPatch.cs" />
     <Compile Include="Patches\ItemDropshipAudioPatch.cs" />
     <Compile Include="Patches\PlayerControllerPatch.cs" />
     <Compile Include="Patches\LethalThingsPatch.cs" />

@@ -1,25 +1,22 @@
-using UnityEngine;
-
 namespace ReturnByDeath.Data
 {
-    internal struct ScrapCheckpointData
+    internal class ScrapCheckpointData
     {
-        internal ulong NetworkObjectId;
-        internal string ItemName;
-        internal int SlotIndex;
-        internal Vector3 Position;
-        internal Quaternion Rotation;
-        internal bool IsHeld;
-        internal ulong HeldByPlayerClientId;
-
-        internal int ScrapValue;
-        internal int ShotgunAmmo;
-        internal bool IsApparatusInserted;
-
-        public bool IsBeingUsed;
+        internal ulong NetworkObjectId { get; set; }
+        internal string ItemName { get; set; }
+        internal int SlotIndex { get; set; }
+        internal UnityEngine.Vector3 Position { get; set; }
+        internal UnityEngine.Quaternion Rotation { get; set; }
+        internal bool IsHeld { get; set; }
+        internal ulong HeldByPlayerClientId { get; set; }
+        internal int ScrapValue { get; set; }
+        internal int ShotgunAmmo { get; set; }
+        internal bool IsBeingUsed { get; set; }
 
         internal bool HasBattery { get; set; }
-        internal float BatteryCharge { get; set; }
+        internal float BatteryCharge { get; set; } = 1f;
         internal bool IsBatteryEmpty { get; set; }
+
+        internal int ItemItemId { get; set; }
     }
 }

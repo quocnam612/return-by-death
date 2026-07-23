@@ -89,6 +89,8 @@ namespace ReturnByDeath
             harmony.PatchAll(typeof(LandminePatch));
             harmony.PatchAll(typeof(HoarderBugPatch));
             harmony.PatchAll(typeof(GrabbableObjectPatch));
+            harmony.PatchAll(typeof(EnemyAIPatch));
+
 
             LethalThingsPatch.Apply(harmony);
             mls = Logger;

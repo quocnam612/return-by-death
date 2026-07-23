@@ -13,23 +13,20 @@ namespace ReturnByDeath.Patches
     [HarmonyPatch(typeof(PlayerControllerB))]
     internal static class PlayerControllerPatch
     {
-        // Cache FieldInfo của cameraUp để truy cập nhanh không bị lag
-        private static readonly FieldInfo CameraUpField =
-            AccessTools.Field(typeof(PlayerControllerB), "cameraUp");
+        private static readonly FieldInfo CameraUpField = AccessTools.Field(typeof(PlayerControllerB), "cameraUp");
+        private static readonly FieldInfo IsJumpingField = AccessTools.Field(typeof(PlayerControllerB), "isJumping");
 
         private struct PlayerCheckpoint
         {
             internal Vector3 Position;
             internal Vector3 CameraEuler;
-            internal float CameraUp; // Bổ sung lưu biến cameraUp
+            internal float CameraUp;
 
-            // Environment and audio context.
             internal bool IsInsideFactory;
             internal bool IsInHangarShipRoom;
             internal bool IsInElevator;
             internal AudioReverbTrigger CurrentAudioTrigger;
 
-            // Survival state.
             internal float SprintMeter;
             internal int Health;
             internal float InsanityLevel;
@@ -38,17 +35,13 @@ namespace ReturnByDeath.Patches
             internal bool CriticallyInjured;
             internal bool BleedingHeavily;
 
-            // Movement state.
             internal Transform PhysicsParent;
             internal Transform OverridePhysicsParent;
-            internal float FallValue;
-            internal float FallValueUncapped;
             internal bool IsCrouching;
 
-            // Inventory state.
             internal int ActiveSlot;
             internal bool IsHoldingUtilSlot;
-            internal System.Collections.Generic.List<ReturnByDeath.Data.ScrapCheckpointData> SavedScraps;
+            internal List<ReturnByDeath.Data.ScrapCheckpointData> SavedScraps;
             internal List<ReturnByDeath.Data.WorldScrapCheckpointData> SavedWorldScraps;
         }
 
@@ -59,7 +52,7 @@ namespace ReturnByDeath.Patches
         private static float saveTimer = 0f;
         private static readonly float SaveInterval = 60f;
 
-        private static UnityEngine.InputSystem.InputAction manualSaveAction;
+        private static InputAction manualSaveAction;
         private static string lastBoundKey = "";
 
         private static float untargetableTimer = 0f;
@@ -77,10 +70,7 @@ namespace ReturnByDeath.Patches
         [HarmonyPatch("ConnectClientToPlayerObject")]
         private static void SaveInitialCheckpoint(PlayerControllerB __instance)
         {
-            if (GameNetworkManager.Instance == null
-                || GameNetworkManager.Instance.localPlayerController != __instance) return;
-
-            ReturnByDeathBase.Instance.mls.LogInfo("Local player connected; creating initial checkpoint.");
+            if (GameNetworkManager.Instance == null || GameNetworkManager.Instance.localPlayerController != __instance) return;
             SaveLocalPlayerCheckpoint();
             saveTimer = 0f;
         }
@@ -130,17 +120,10 @@ namespace ReturnByDeath.Patches
 
         internal static void SaveLocalPlayerCheckpoint()
         {
-            PlayerControllerB player = GameNetworkManager.Instance != null
-                ? GameNetworkManager.Instance.localPlayerController
-                : null;
-
+            PlayerControllerB player = GameNetworkManager.Instance != null ? GameNetworkManager.Instance.localPlayerController : null;
             if (player == null || player.isPlayerDead || player.health <= 0) return;
 
-            Vector3 currentCamEuler = player.gameplayCamera != null
-                ? player.gameplayCamera.transform.eulerAngles
-                : player.transform.eulerAngles;
-
-            // Lấy giá trị cameraUp private
+            Vector3 currentCamEuler = player.gameplayCamera != null ? player.gameplayCamera.transform.eulerAngles : player.transform.eulerAngles;
             float currentCameraUp = (float)(CameraUpField?.GetValue(player) ?? 0f);
 
             ReturnByDeath.Data.PlayerScrapState scrapState = ReturnByDeath.Data.PlayerScrapState.Capture(player);
@@ -149,7 +132,7 @@ namespace ReturnByDeath.Patches
             {
                 Position = player.transform.position,
                 CameraEuler = currentCamEuler,
-                CameraUp = currentCameraUp, // Lưu góc nhìn Pitch (ngước lên/ngó xuống)
+                CameraUp = currentCameraUp,
                 IsInsideFactory = player.isInsideFactory,
                 IsInHangarShipRoom = player.isInHangarShipRoom,
                 IsInElevator = player.isInElevator,
@@ -163,8 +146,6 @@ namespace ReturnByDeath.Patches
                 BleedingHeavily = player.bleedingHeavily,
                 PhysicsParent = player.physicsParent,
                 OverridePhysicsParent = player.overridePhysicsParent,
-                FallValue = player.fallValue,
-                FallValueUncapped = player.fallValueUncapped,
                 IsCrouching = player.isCrouching,
 
                 ActiveSlot = scrapState.ActiveSlotIndex,
@@ -174,7 +155,6 @@ namespace ReturnByDeath.Patches
             };
 
             hasCheckpoint = true;
-            ReturnByDeathBase.Instance.mls.LogInfo($"Checkpoint saved at Position: {checkpoint.Position}, Camera Euler: {checkpoint.CameraEuler}, Camera Up: {checkpoint.CameraUp}");
         }
 
         [HarmonyPrefix]
@@ -184,7 +164,7 @@ namespace ReturnByDeath.Patches
             if (!ReturnByDeathAppliesTo(__instance) || damageNumber < __instance.health) return true;
             if (!hasCheckpoint || isRestoring) return false;
 
-            __instance.StartCoroutine(DelayedRestoreRoutine(__instance, 0.07f));
+            __instance.StartCoroutine(DelayedRestoreRoutine(__instance));
             return false;
         }
 
@@ -195,49 +175,58 @@ namespace ReturnByDeath.Patches
             if (!ReturnByDeathAppliesTo(__instance)) return true;
             if (!hasCheckpoint || isRestoring) return false;
 
-            __instance.StartCoroutine(DelayedRestoreRoutine(__instance, 0.07f));
+            __instance.StartCoroutine(DelayedRestoreRoutine(__instance));
             return false;
         }
 
-        private static IEnumerator DelayedRestoreRoutine(PlayerControllerB player, float delay)
+        private static IEnumerator DelayedRestoreRoutine(PlayerControllerB player)
         {
             isRestoring = true;
 
-            yield return new WaitForSeconds(delay);
+            // --- 1. TẮT CONTROLLER VÀ ĐẨY VỀ BỀ MẶT CHECKPOINT ---
+            if (player.thisController != null)
+            {
+                player.thisController.enabled = false;
+            }
 
-            RestoreCheckpoint(player);
-
-            isRestoring = false;
-        }
-
-        private static bool RestoreCheckpoint(PlayerControllerB player)
-        {
-            if (!hasCheckpoint) return false;
-
-            // --- PARENT & CAMERA RELEASE ---
             player.transform.SetParent(StartOfRound.Instance.playersContainer);
             player.physicsParent = null;
             player.overridePhysicsParent = null;
             player.lastSyncedPhysicsParent = null;
 
-            // --- TELEPORT & FIX ROTATION & PITCH ---
-            player.TeleportPlayer(checkpoint.Position);
+            player.fallValue = 0f;
+            player.fallValueUncapped = 0f;
+            player.velocityLastFrame = Vector3.zero;
+            player.externalForces = Vector3.zero;
+            player.externalForceAutoFade = Vector3.zero;
+            player.takingFallDamage = false;
+            player.isFallingFromJump = false;
+            player.isFallingNoJump = false;
+            IsJumpingField?.SetValue(player, false);
+
+            player.transform.position = checkpoint.Position;
             player.serverPlayerPosition = checkpoint.Position;
 
+            Physics.SyncTransforms();
+
+            // CHỜ 1 FIXED UPDATE FRAME ĐỂ PHYSX XẢ HOÀN TOÀN TRIGGER DƯỚI HỐ
+            yield return new WaitForFixedUpdate();
+
+            if (player.thisController != null)
+            {
+                player.thisController.enabled = true;
+            }
+
+            player.TeleportPlayer(checkpoint.Position);
+            Physics.SyncTransforms();
+
+            // --- 2. CAMERA & ROTATION ---
             Vector3 targetPlayerEuler = new Vector3(0f, checkpoint.CameraEuler.y, 0f);
             player.transform.eulerAngles = targetPlayerEuler;
 
-            if (player.thisPlayerBody != null)
-            {
-                player.thisPlayerBody.eulerAngles = targetPlayerEuler;
-            }
+            if (player.thisPlayerBody != null) player.thisPlayerBody.eulerAngles = targetPlayerEuler;
+            if (player.turnCompass != null) player.turnCompass.eulerAngles = targetPlayerEuler;
 
-            if (player.turnCompass != null)
-            {
-                player.turnCompass.eulerAngles = targetPlayerEuler;
-            }
-
-            // Gán lại biến cameraUp private để không bị Update đè lại góc pitch
             CameraUpField?.SetValue(player, checkpoint.CameraUp);
 
             if (player.gameplayCamera != null)
@@ -251,7 +240,7 @@ namespace ReturnByDeath.Patches
                 player.gameplayCamera.transform.localEulerAngles = new Vector3(checkpoint.CameraUp, 0f, 0f);
             }
 
-            // --- AMBIENCE & LIGHTING ---
+            // --- 3. AMBIENCE & PLAYER STATS ---
             player.isInsideFactory = checkpoint.IsInsideFactory;
             player.isInHangarShipRoom = checkpoint.IsInHangarShipRoom;
             player.isInElevator = checkpoint.IsInElevator;
@@ -263,12 +252,6 @@ namespace ReturnByDeath.Patches
                 TimeOfDay.Instance.SetInsideLightingDimness(doNotLerp: true, checkpoint.IsInsideFactory || checkpoint.IsInHangarShipRoom);
             }
 
-            if (checkpoint.CurrentAudioTrigger != null)
-            {
-                checkpoint.CurrentAudioTrigger.ChangeAudioReverbForPlayer(player);
-            }
-
-            // --- PLAYER STATS ---
             player.sprintMeter = checkpoint.SprintMeter;
             player.health = checkpoint.Health;
             player.drunkness = checkpoint.Drunkness;
@@ -279,16 +262,12 @@ namespace ReturnByDeath.Patches
 
             player.physicsParent = checkpoint.PhysicsParent;
             player.overridePhysicsParent = checkpoint.OverridePhysicsParent;
-            player.fallValue = 0f;
-            player.fallValueUncapped = 0f;
-            player.externalForces = Vector3.zero;
-            player.takingFallDamage = false;
             player.Crouch(checkpoint.IsCrouching);
 
             player.insanityLevel = checkpoint.InsanityLevel;
             player.insanitySpeedMultiplier = 1f;
 
-            // --- RESTORE INVENTORY ---
+            // --- 4. KHÔI PHỤC INVENTORY & ITEM ---
             GrabbableObjectPatch.RestoreAllScrapData(
                 player,
                 checkpoint.SavedScraps,
@@ -297,9 +276,11 @@ namespace ReturnByDeath.Patches
                 checkpoint.IsHoldingUtilSlot
             );
 
-            // --- HUD OVERLAY ---
+            // --- 5. RELOAD HUD OVERLAY ---
             if (HUDManager.Instance != null)
             {
+                HUDManager.Instance.HideHUD(true);
+
                 HUDManager.Instance.SetCracksOnVisor(checkpoint.Health);
                 HUDManager.Instance.UpdateHealthUI(checkpoint.Health, hurtPlayer: false);
 
@@ -311,8 +292,8 @@ namespace ReturnByDeath.Patches
 
                 if (StartOfRound.Instance != null)
                 {
-                    StartOfRound.Instance.fearLevel = 0.7f;
-                    StartOfRound.Instance.fearLevelIncreasing = true;
+                    StartOfRound.Instance.fearLevel = checkpointInsanityRatio;
+                    StartOfRound.Instance.fearLevelIncreasing = false;
                 }
 
                 if (HUDManager.Instance.insanityScreenFilter != null)
@@ -323,114 +304,15 @@ namespace ReturnByDeath.Patches
                 if (HUDManager.Instance.HUDAnimator != null)
                 {
                     HUDManager.Instance.HUDAnimator.SetBool("insanity", checkpointInsanityRatio > 0.4f);
+                    HUDManager.Instance.HUDAnimator.SetBool("biohazardDamage", false);
                 }
 
                 HUDManager.Instance.HideHUD(false);
             }
 
-            // --- RESET ENEMY AI ---
-            EnemyAI[] allEnemies = Object.FindObjectsByType<EnemyAI>(FindObjectsSortMode.None);
-            foreach (EnemyAI enemy in allEnemies)
-            {
-                if (enemy == null || enemy.isEnemyDead) continue;
+            // --- 6. RESET QUÁI ---
+            ResetAllEnemies(player);
 
-                try
-                {
-                    if (enemy is FlowermanAI bracken)
-                    {
-                        bracken.StopAllCoroutines();
-                        bracken.FinishKillAnimation(carryingBody: false);
-                        bracken.inKillAnimation = false;
-                        bracken.carryingPlayerBody = false;
-                        bracken.bodyBeingCarried = null;
-                        bracken.inSpecialAnimationWithPlayer = null;
-
-                        if (bracken.enemyBehaviourStates != null && bracken.enemyBehaviourStates.Length > 1)
-                        {
-                            bracken.SwitchToBehaviourState(1);
-                        }
-                        continue;
-                    }
-                    else if (enemy is MaskedPlayerEnemy masked)
-                    {
-                        masked.StopAllCoroutines();
-                        masked.FinishKillAnimation();
-                        masked.inSpecialAnimationWithPlayer = null;
-                        masked.targetPlayer = null;
-                        masked.movingTowardsTargetPlayer = false;
-
-                        if (masked.enemyBehaviourStates != null && masked.enemyBehaviourStates.Length > 0)
-                        {
-                            masked.SwitchToBehaviourState(0);
-                        }
-                        continue;
-                    }
-                    else if (enemy is ButlerBeesEnemyAI bees)
-                    {
-                        bees.targetPlayer = null;
-                        bees.movingTowardsTargetPlayer = false;
-                        continue;
-                    }
-                    else if (enemy is DressGirlAI girl)
-                    {
-                        girl.StopAllCoroutines();
-                        girl.timer = 0f;
-                        girl.staringTimer = 0f;
-                        girl.staringInHaunt = false;
-                        girl.disappearingFromStare = false;
-
-                        if (girl.currentBehaviourStateIndex == 1)
-                        {
-                            girl.SwitchToBehaviourState(0);
-                        }
-
-                        if (girl.creatureAnimator != null)
-                        {
-                            girl.creatureAnimator.SetBool("Walk", false);
-                        }
-
-                        if (girl.heartbeatMusic != null)
-                        {
-                            girl.heartbeatMusic.volume = 0f;
-                        }
-                        girl.SFXVolumeLerpTo = 0f;
-
-                        girl.EnableEnemyMesh(enable: false, overrideDoNotSet: true, tamperWithMeshes: true);
-                        continue;
-                    }
-
-                    if (enemy.inSpecialAnimation && (enemy.targetPlayer == player || enemy.inSpecialAnimationWithPlayer == player))
-                    {
-                        enemy.StopAllCoroutines();
-                        enemy.inSpecialAnimation = false;
-                    }
-
-                    if (enemy.targetPlayer == player)
-                    {
-                        enemy.targetPlayer = null;
-                        enemy.movingTowardsTargetPlayer = false;
-                        enemy.moveTowardsDestination = false;
-
-                        if (enemy.currentSearch != null)
-                        {
-                            enemy.StopSearch(enemy.currentSearch);
-                        }
-
-                        if (enemy.enemyBehaviourStates != null && enemy.enemyBehaviourStates.Length > 0)
-                        {
-                            enemy.SwitchToBehaviourState(0);
-                        }
-                    }
-
-                    enemy.CancelSpecialAnimationWithPlayer();
-                }
-                catch (System.Exception ex)
-                {
-                    ReturnByDeathBase.Instance.mls.LogWarning($"Error resetting {enemy.GetType().Name}: {ex.Message}");
-                }
-            }
-
-            // --- INPUT & CURSOR UNLOCK ---
             player.inAnimationWithEnemy = null;
             player.inSpecialInteractAnimation = false;
             player.disableMoveInput = false;
@@ -443,21 +325,9 @@ namespace ReturnByDeath.Patches
 
             SoundManagerPatch.PlayReturnByDeathSound();
 
-            // --- RESET LANDMINE ---
-            if (LandminePatch.lastMineSteppedByLocalPlayer != null)
-            {
-                Landmine mine = LandminePatch.lastMineSteppedByLocalPlayer;
-                if (mine.hasExploded)
-                {
-                    ResetLandmine(mine);
-                }
-                LandminePatch.lastMineSteppedByLocalPlayer = null;
-            }
-
-            ReturnByDeathBase.Instance.mls.LogInfo("Lethal damage prevented; restored last checkpoint.");
             untargetableTimer = Time.time + 3f;
             saveTimer = 0f;
-            return true;
+            isRestoring = false;
         }
 
         private static bool ReturnByDeathAppliesTo(PlayerControllerB player)
@@ -468,45 +338,27 @@ namespace ReturnByDeath.Patches
                    && GameNetworkManager.Instance.localPlayerController == player;
         }
 
-        private static void ResetLandmine(Landmine mine)
+        private static void ResetAllEnemies(PlayerControllerB player)
         {
-            if (mine == null) return;
-            Vector3 minePos = mine.transform.position;
-
-            LandminePatch.ResetMineFully(mine);
-            CleanupBlastEffectAt(minePos);
-        }
-
-        private static void CleanupBlastEffectAt(Vector3 position)
-        {
-            if (RoundManager.Instance != null && RoundManager.Instance.mapPropsContainer != null)
+            EnemyAI[] allEnemies = Object.FindObjectsByType<EnemyAI>(FindObjectsSortMode.None);
+            foreach (EnemyAI enemy in allEnemies)
             {
-                Transform propsContainer = RoundManager.Instance.mapPropsContainer.transform;
-                for (int i = propsContainer.childCount - 1; i >= 0; i--)
+                if (enemy == null || enemy.isEnemyDead) continue;
+                try
                 {
-                    Transform child = propsContainer.GetChild(i);
-                    if (child == null) continue;
-
-                    if (Vector3.Distance(child.position, position) < 8f)
+                    if (enemy.targetPlayer == player)
                     {
-                        string name = child.gameObject.name.ToLower();
-                        if (name.Contains("explosion") || name.Contains("scorch") || name.Contains("decal") || name.Contains("blast"))
+                        enemy.targetPlayer = null;
+                        enemy.movingTowardsTargetPlayer = false;
+                        enemy.moveTowardsDestination = false;
+                        if (enemy.enemyBehaviourStates != null && enemy.enemyBehaviourStates.Length > 0)
                         {
-                            UnityEngine.Object.Destroy(child.gameObject);
+                            enemy.SwitchToBehaviourState(0);
                         }
                     }
+                    enemy.CancelSpecialAnimationWithPlayer();
                 }
-            }
-
-            GameObject[] allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
-            foreach (GameObject go in allObjects)
-            {
-                if (go == null) continue;
-                string name = go.name.ToLower();
-                if ((name.Contains("scorch") || name.Contains("decal") || name.Contains("explosionmark")) && Vector3.Distance(go.transform.position, position) < 8f)
-                {
-                    UnityEngine.Object.Destroy(go);
-                }
+                catch { }
             }
         }
     }

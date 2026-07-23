@@ -83,6 +83,7 @@ namespace ReturnByDeath.Data
             {
                 NetworkObjectId = netObj.NetworkObjectId,
                 ItemName = item.itemProperties != null ? item.itemProperties.itemName : "Unknown",
+                ItemItemId = item.itemProperties != null ? item.itemProperties.itemId : -1,
                 SlotIndex = slotIndex,
                 Position = item.transform.position,
                 Rotation = item.transform.rotation,
@@ -90,7 +91,6 @@ namespace ReturnByDeath.Data
                 HeldByPlayerClientId = clientId,
                 ScrapValue = item.scrapValue,
                 ShotgunAmmo = extraDataAmmo,
-                IsApparatusInserted = false,
                 IsBeingUsed = item.isBeingUsed,
                 HasBattery = hasBattery,
                 BatteryCharge = hasBattery ? item.insertedBattery.charge : 1f,

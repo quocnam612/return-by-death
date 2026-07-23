@@ -25,13 +25,6 @@ namespace ReturnByDeath.Patches
         {
             if (localPlayer == null || savedHeldScraps == null) return;
 
-            if (localPlayer.ItemSlots == null || localPlayer.ItemSlots.Length == 0) return;
-            if (activeSlot < 0 || activeSlot >= localPlayer.ItemSlots.Length)
-            {
-                activeSlot = Mathf.Clamp(activeSlot, 0, localPlayer.ItemSlots.Length - 1);
-            }
-
-            // 1. Un-equip & thả sạch đồ đang cầm
             localPlayer.DropAllHeldItems();
             localPlayer.isGrabbingObjectAnimation = false;
             localPlayer.inSpecialInteractAnimation = false;
@@ -46,21 +39,22 @@ namespace ReturnByDeath.Patches
                 localPlayer.playerBodyAnimator.SetBool("cancelHoldingTwoHanded", true);
             }
 
-            // Clear UI Slots
-            if (HUDManager.Instance != null && HUDManager.Instance.itemSlotIcons != null)
+            if (HUDManager.Instance != null)
             {
-                for (int i = 0; i < HUDManager.Instance.itemSlotIcons.Length; i++)
+                if (HUDManager.Instance.itemSlotIcons != null)
                 {
-                    if (HUDManager.Instance.itemSlotIcons[i] != null)
+                    for (int i = 0; i < HUDManager.Instance.itemSlotIcons.Length; i++)
                     {
-                        HUDManager.Instance.itemSlotIcons[i].enabled = false;
+                        if (HUDManager.Instance.itemSlotIcons[i] != null)
+                        {
+                            HUDManager.Instance.itemSlotIcons[i].enabled = false;
+                        }
                     }
                 }
-            }
-
-            if (HUDManager.Instance != null && HUDManager.Instance.itemOnlySlotIcon != null)
-            {
-                HUDManager.Instance.itemOnlySlotIcon.enabled = false;
+                if (HUDManager.Instance.itemOnlySlotIcon != null)
+                {
+                    HUDManager.Instance.itemOnlySlotIcon.enabled = false;
+                }
             }
 
             for (int i = 0; i < localPlayer.ItemSlots.Length; i++)
@@ -72,7 +66,7 @@ namespace ReturnByDeath.Patches
             float calculatedWeight = 1f;
             GrabbableObject[] allWorldItems = UnityEngine.Object.FindObjectsByType<GrabbableObject>(FindObjectsSortMode.None);
 
-            // 2. TRẢ CÁC ITEM TRÊN BẢN ĐỒ VỀ VỊ TRÍ GỐC KHI SAVE CHECKPOINT
+            // 1. RESTORE WORLD SCRAPS
             if (savedWorldScraps != null)
             {
                 foreach (var worldData in savedWorldScraps)
@@ -90,7 +84,6 @@ namespace ReturnByDeath.Patches
                     }
 
                     bool isHeldInCheckpoint = savedHeldScraps.Exists(h => h.NetworkObjectId == worldData.NetworkObjectId);
-
                     if (!isHeldInCheckpoint)
                     {
                         ResetItemToWorldPosition(localPlayer, worldItem, worldData);
@@ -98,7 +91,7 @@ namespace ReturnByDeath.Patches
                 }
             }
 
-            // 3. RESTORE CÁC ITEM TRONG HÀNH TRANG CHECKPOINT
+            // 2. RESTORE HELD ITEMS
             foreach (var savedData in savedHeldScraps)
             {
                 GrabbableObject item = Array.Find(allWorldItems, x =>
@@ -106,7 +99,43 @@ namespace ReturnByDeath.Patches
                     x.GetComponent<NetworkObject>() != null &&
                     x.GetComponent<NetworkObject>().NetworkObjectId == savedData.NetworkObjectId);
 
+                bool isSpentFlashbang = false;
+                if (item is StunGrenadeItem grenade)
+                {
+                    if (grenade.pinPulled || grenade.hasExploded || grenade.itemUsedUp || grenade.deactivated)
+                    {
+                        isSpentFlashbang = true;
+                    }
+                }
+
+                if (item == null || isSpentFlashbang)
+                {
+                    if (item != null)
+                    {
+                        UnityEngine.Object.Destroy(item.gameObject);
+                        item = null;
+                    }
+
+                    item = RecreatenAndSpawnItem(savedData, localPlayer);
+
+                    if (item != null && item.GetComponent<NetworkObject>() != null)
+                    {
+                        savedData.NetworkObjectId = item.GetComponent<NetworkObject>().NetworkObjectId;
+                    }
+                }
+
                 if (item == null) continue;
+
+                item.deactivated = false;
+                item.itemUsedUp = false;
+
+                if (item is StunGrenadeItem freshGrenade)
+                {
+                    freshGrenade.pinPulled = false;
+                    freshGrenade.hasExploded = false;
+                    freshGrenade.itemUsedUp = false;
+                    freshGrenade.deactivated = false;
+                }
 
                 HoarderBugPatch.ReleaseItemFromAllBugs(item);
 
@@ -117,7 +146,6 @@ namespace ReturnByDeath.Patches
 
                 int slot = savedData.SlotIndex;
 
-                // --- UTIL SLOT (50) ---
                 if (slot == 50)
                 {
                     localPlayer.ItemOnlySlot = item;
@@ -132,11 +160,11 @@ namespace ReturnByDeath.Patches
                     continue;
                 }
 
-                // --- STANDARD SLOTS ---
                 if (slot >= 0 && slot < localPlayer.ItemSlots.Length)
                 {
                     localPlayer.ItemSlots[slot] = item;
                     SetupItemOnPlayer(localPlayer, item, isEquipped: false);
+                    RestoreItemBatteryAndState(item, savedData);
 
                     if (item.itemProperties != null)
                     {
@@ -158,15 +186,97 @@ namespace ReturnByDeath.Patches
                     {
                         shotgun.shellsLoaded = savedData.ShotgunAmmo;
                     }
-
-                    RestoreItemBatteryAndState(item, savedData);
                 }
             }
 
             localPlayer.carryWeight = calculatedWeight;
+            if (StartOfRound.Instance != null)
+            {
+                StartOfRound.Instance.SendChangedWeightEvent();
+            }
 
-            // 4. Kích hoạt Fast Swap Slot
             localPlayer.StartCoroutine(DelayedSlotEquipRoutine(localPlayer, activeSlot, isHoldingUtilSlot));
+        }
+
+        private static void RestoreItemBatteryAndState(GrabbableObject item, ScrapCheckpointData savedData)
+        {
+            if (item == null || savedData == null) return;
+
+            item.deactivated = false;
+            item.itemUsedUp = false;
+
+            if (savedData.HasBattery && item.insertedBattery != null)
+            {
+                item.insertedBattery.charge = savedData.BatteryCharge;
+                item.insertedBattery.empty = savedData.IsBatteryEmpty || savedData.BatteryCharge <= 0f;
+            }
+
+            item.isBeingUsed = savedData.IsBeingUsed;
+
+            if (item is FlashlightItem flashlight)
+            {
+                bool shouldBeOn = savedData.IsBeingUsed && (item.insertedBattery == null || !item.insertedBattery.empty);
+                flashlight.SwitchFlashlight(shouldBeOn);
+            }
+        }
+
+        private static GrabbableObject RecreatenAndSpawnItem(ScrapCheckpointData savedData, PlayerControllerB localPlayer)
+        {
+            Item targetItemProperty = null;
+
+            // 1. Quét trong AllItemsList
+            if (StartOfRound.Instance != null && StartOfRound.Instance.allItemsList != null)
+            {
+                targetItemProperty = StartOfRound.Instance.allItemsList.itemsList.Find(x =>
+                    x != null && (x.itemId == savedData.ItemItemId ||
+                    (savedData.ItemName != "Unknown" && string.Equals(x.itemName, savedData.ItemName, StringComparison.OrdinalIgnoreCase))));
+            }
+
+            // 2. Quét trong BuyableItems của Terminal (Nơi chứa Flashbang, Walkie-talkie...)
+            if (targetItemProperty == null)
+            {
+                Terminal terminal = UnityEngine.Object.FindObjectOfType<Terminal>();
+                if (terminal != null && terminal.buyableItemsList != null)
+                {
+                    targetItemProperty = Array.Find(terminal.buyableItemsList, x =>
+                        x != null && (x.itemId == savedData.ItemItemId || string.Equals(x.itemName, savedData.ItemName, StringComparison.OrdinalIgnoreCase)));
+                }
+            }
+
+            if (targetItemProperty == null || targetItemProperty.spawnPrefab == null) return null;
+
+            GameObject spawnedObj = UnityEngine.Object.Instantiate(
+                targetItemProperty.spawnPrefab,
+                localPlayer.localItemHolder.position,
+                Quaternion.identity,
+                StartOfRound.Instance.propsContainer
+            );
+
+            GrabbableObject grabbable = spawnedObj.GetComponent<GrabbableObject>();
+            if (grabbable != null)
+            {
+                grabbable.scrapValue = savedData.ScrapValue;
+                grabbable.itemProperties = targetItemProperty;
+
+                if (grabbable is StunGrenadeItem grenade)
+                {
+                    grenade.pinPulled = false;
+                    grenade.hasExploded = false;
+                    grenade.itemUsedUp = false;
+                    grenade.deactivated = false;
+                }
+
+                grabbable.deactivated = false;
+                grabbable.itemUsedUp = false;
+
+                NetworkObject netObj = spawnedObj.GetComponent<NetworkObject>();
+                if (netObj != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+                {
+                    if (!netObj.IsSpawned) netObj.Spawn();
+                }
+            }
+
+            return grabbable;
         }
 
         private static void ResetItemToWorldPosition(PlayerControllerB localPlayer, GrabbableObject item, WorldScrapCheckpointData worldData)
@@ -176,8 +286,9 @@ namespace ReturnByDeath.Patches
             item.heldByPlayerOnServer = false;
             item.playerHeldBy = null;
             item.parentObject = null;
+            item.deactivated = false;
+            item.itemUsedUp = false;
 
-            // Transform về vị trí cũ trên mặt đất
             item.transform.position = worldData.Position;
             item.transform.rotation = worldData.Rotation;
             item.targetFloorPosition = item.transform.localPosition;
@@ -196,23 +307,6 @@ namespace ReturnByDeath.Patches
             item.EnableItemMeshes(true);
         }
 
-        private static void RestoreItemBatteryAndState(GrabbableObject item, ScrapCheckpointData savedData)
-        {
-            if (savedData.HasBattery && item.insertedBattery != null)
-            {
-                item.insertedBattery.charge = savedData.BatteryCharge;
-                item.insertedBattery.empty = savedData.IsBatteryEmpty || savedData.BatteryCharge <= 0f;
-            }
-
-            item.isBeingUsed = savedData.IsBeingUsed;
-
-            if (item is FlashlightItem flashlight)
-            {
-                bool shouldBeOn = savedData.IsBeingUsed && (item.insertedBattery == null || !item.insertedBattery.empty);
-                flashlight.SwitchFlashlight(shouldBeOn);
-            }
-        }
-
         private static IEnumerator DelayedSlotEquipRoutine(PlayerControllerB localPlayer, int targetSlot, bool isHoldingUtilSlot)
         {
             yield return null;
@@ -220,7 +314,6 @@ namespace ReturnByDeath.Patches
             if (isHoldingUtilSlot && localPlayer.ItemOnlySlot != null)
             {
                 GrabbableObject utilItem = localPlayer.ItemOnlySlot;
-
                 localPlayer.currentlyHeldObjectServer = utilItem;
                 localPlayer.isHoldingObject = true;
 
