@@ -183,12 +183,7 @@ namespace ReturnByDeath.Patches
         {
             isRestoring = true;
 
-            // --- 1. TẮT CONTROLLER VÀ ĐẨY VỀ BỀ MẶT CHECKPOINT ---
-            if (player.thisController != null)
-            {
-                player.thisController.enabled = false;
-            }
-
+            // --- 1. RỬA SẠCH PARENT & LỰC VẬT LÝ ---
             player.transform.SetParent(StartOfRound.Instance.playersContainer);
             player.physicsParent = null;
             player.overridePhysicsParent = null;
@@ -204,23 +199,31 @@ namespace ReturnByDeath.Patches
             player.isFallingNoJump = false;
             IsJumpingField?.SetValue(player, false);
 
-            player.transform.position = checkpoint.Position;
-            player.serverPlayerPosition = checkpoint.Position;
+            Vector3 oobPos = new Vector3(0f, -2000f, 0f);
 
+            // Bật controller và Teleport ra vô cực (OOB)
+            if (player.thisController != null) player.thisController.enabled = true;
+            player.TeleportPlayer(oobPos);
             Physics.SyncTransforms();
 
-            // CHỜ 1 FIXED UPDATE FRAME ĐỂ PHYSX XẢ HOÀN TOÀN TRIGGER DƯỚI HỐ
+            // Chờ 1 frame FixedUpdate với Controller BẬT để PhysX tính toán Trigger Exit
             yield return new WaitForFixedUpdate();
 
-            if (player.thisController != null)
-            {
-                player.thisController.enabled = true;
-            }
+            // Tắt Controller tạm thời để đưa về Checkpoint chuẩn
+            if (player.thisController != null) player.thisController.enabled = false;
 
+            player.transform.position = checkpoint.Position;
+            player.serverPlayerPosition = checkpoint.Position;
+            Physics.SyncTransforms();
+
+            // Bật lại Controller ở Checkpoint
+            if (player.thisController != null) player.thisController.enabled = true;
             player.TeleportPlayer(checkpoint.Position);
             Physics.SyncTransforms();
 
-            // --- 2. CAMERA & ROTATION ---
+            ResetAllKillLocalPlayerTriggers();
+
+            // --- 3. CAMERA & ROTATION ---
             Vector3 targetPlayerEuler = new Vector3(0f, checkpoint.CameraEuler.y, 0f);
             player.transform.eulerAngles = targetPlayerEuler;
 
@@ -240,7 +243,7 @@ namespace ReturnByDeath.Patches
                 player.gameplayCamera.transform.localEulerAngles = new Vector3(checkpoint.CameraUp, 0f, 0f);
             }
 
-            // --- 3. AMBIENCE & PLAYER STATS ---
+            // --- 4. AMBIENCE & PLAYER STATS ---
             player.isInsideFactory = checkpoint.IsInsideFactory;
             player.isInHangarShipRoom = checkpoint.IsInHangarShipRoom;
             player.isInElevator = checkpoint.IsInElevator;
@@ -267,7 +270,7 @@ namespace ReturnByDeath.Patches
             player.insanityLevel = checkpoint.InsanityLevel;
             player.insanitySpeedMultiplier = 1f;
 
-            // --- 4. KHÔI PHỤC INVENTORY & ITEM ---
+            // --- 5. KHÔI PHỤC INVENTORY ---
             GrabbableObjectPatch.RestoreAllScrapData(
                 player,
                 checkpoint.SavedScraps,
@@ -276,7 +279,21 @@ namespace ReturnByDeath.Patches
                 checkpoint.IsHoldingUtilSlot
             );
 
-            // --- 5. RELOAD HUD OVERLAY ---
+            // --- RESTORE LANDMINES & CLEAN DECAL ---
+            if (LandminePatch.lastMineSteppedByLocalPlayer != null)
+            {
+                LandminePatch.ResetMineFully(LandminePatch.lastMineSteppedByLocalPlayer);
+                LandminePatch.lastMineSteppedByLocalPlayer = null;
+            }
+            else
+            {
+                // Nếu chết do Flashbang hoặc lý do khác, vẫn quét dọn vết cháy đen quanh vị trí chết
+                LandminePatch.ClearDecalMarksAroundPosition(checkpoint.Position);
+            }
+
+            StunGrenadeItemPatch.ClearLocalPlayerFlashbangDecals();
+
+            // --- 6. RELOAD HUD OVERLAY ---
             if (HUDManager.Instance != null)
             {
                 HUDManager.Instance.HideHUD(true);
@@ -310,7 +327,7 @@ namespace ReturnByDeath.Patches
                 HUDManager.Instance.HideHUD(false);
             }
 
-            // --- 6. RESET QUÁI ---
+            // --- 7. RESET QUÁI & TRẠNG THÁI ANIMATION ---
             ResetAllEnemies(player);
 
             player.inAnimationWithEnemy = null;
@@ -359,6 +376,48 @@ namespace ReturnByDeath.Patches
                     enemy.CancelSpecialAnimationWithPlayer();
                 }
                 catch { }
+            }
+        }
+
+        private static void ResetAllKillLocalPlayerTriggers()
+        {
+            // Quét toàn bộ component KillLocalPlayer trong Scene
+            KillLocalPlayer[] killTriggers = Object.FindObjectsByType<KillLocalPlayer>(FindObjectsSortMode.None);
+            foreach (var trigger in killTriggers)
+            {
+                if (trigger == null) continue;
+
+                // Reset flag block của KillLocalPlayer
+                // (Dùng Reflection để reset cả private/public field liên quan đến trạng thái đã giết)
+                var fields = AccessTools.GetDeclaredFields(typeof(KillLocalPlayer));
+                foreach (var field in fields)
+                {
+                    if (field.FieldType == typeof(bool))
+                    {
+                        // Set tất cả các cờ bool (như hasKilled, killedPlayer, isDead...) về false
+                        field.SetValue(trigger, false);
+                    }
+                }
+            }
+
+            // Quét dọn luôn InteractTrigger đính kèm hố (nếu có)
+            InteractTrigger[] interactTriggers = Object.FindObjectsByType<InteractTrigger>(FindObjectsSortMode.None);
+            foreach (var trigger in interactTriggers)
+            {
+                if (trigger == null) continue;
+
+                // Reset trạng thái đang chạm player
+                var fields = AccessTools.GetDeclaredFields(typeof(InteractTrigger));
+                foreach (var field in fields)
+                {
+                    if (field.Name.ToLower().Contains("touching") || field.Name.ToLower().Contains("player") || field.Name.ToLower().Contains("has"))
+                    {
+                        if (field.FieldType == typeof(bool))
+                        {
+                            field.SetValue(trigger, false);
+                        }
+                    }
+                }
             }
         }
     }

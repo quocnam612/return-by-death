@@ -21,9 +21,6 @@ namespace ReturnByDeath.Patches
             }
         }
 
-        /// <summary>
-        /// Khôi phục trạng thái mìn hoàn toàn như lúc chưa nổ
-        /// </summary>
         public static void ResetMineFully(Landmine mine)
         {
             if (mine == null) return;
@@ -31,7 +28,7 @@ namespace ReturnByDeath.Patches
             // 1. Reset các cờ logic trong Landmine.cs
             mine.hasExploded = false;
 
-            // 2. Bật lại Trigger Collider (CỰC KỲ QUAN TRỌNG để nhận diện lần dẫm sau)
+            // 2. Bật lại Trigger Collider
             Collider mineCollider = mine.GetComponent<Collider>();
             if (mineCollider != null)
             {
@@ -60,6 +57,32 @@ namespace ReturnByDeath.Patches
             if (mine.mineAudio != null && !mine.mineAudio.isPlaying)
             {
                 mine.mineAudio.Play();
+            }
+
+            // Dọn vết cháy nổ của mìn tại chỗ
+            ClearDecalMarksAroundPosition(mine.transform.position);
+        }
+
+        public static void ClearDecalMarksAroundPosition(Vector3 position)
+        {
+            // Quét và xóa các vết đốm đen (Scorched Decals / Blast Marks) do Mìn & Flashbang sinh ra
+            GameObject[] allGameObjects = Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+            foreach (GameObject obj in allGameObjects)
+            {
+                if (obj == null) continue;
+
+                string nameLower = obj.name.ToLower();
+                if (nameLower.Contains("scorch") || nameLower.Contains("decal") || nameLower.Contains("blast") || nameLower.Contains("stunedeffect"))
+                {
+                    // Tránh xóa decal cố định của map, chỉ xóa các clone sinh ra trong trận
+                    if (obj.name.EndsWith("(Clone)"))
+                    {
+                        if (Vector3.Distance(obj.transform.position, position) < 15f)
+                        {
+                            Object.Destroy(obj);
+                        }
+                    }
+                }
             }
         }
     }

@@ -18,5 +18,7 @@ namespace ReturnByDeath.Data
         internal bool IsBatteryEmpty { get; set; }
 
         internal int ItemItemId { get; set; }
+
+        internal Item SavedItemProperties { get; set; }
     }
 }

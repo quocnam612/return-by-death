@@ -25,7 +25,9 @@ namespace ReturnByDeath.Patches
         {
             if (localPlayer == null || savedHeldScraps == null) return;
 
-            localPlayer.DropAllHeldItems();
+            // Manual inventory clean (avoids DropAllHeldItems dropping items to the floor)
+            localPlayer.isHoldingObject = false;
+            localPlayer.currentlyHeldObjectServer = null;
             localPlayer.isGrabbingObjectAnimation = false;
             localPlayer.inSpecialInteractAnimation = false;
             localPlayer.disableInteract = false;
@@ -99,16 +101,22 @@ namespace ReturnByDeath.Patches
                     x.GetComponent<NetworkObject>() != null &&
                     x.GetComponent<NetworkObject>().NetworkObjectId == savedData.NetworkObjectId);
 
-                bool isSpentFlashbang = false;
-                if (item is StunGrenadeItem grenade)
+                bool isDamagedOrSpent = false;
+                if (item != null)
                 {
-                    if (grenade.pinPulled || grenade.hasExploded || grenade.itemUsedUp || grenade.deactivated)
+                    if (item.GetComponentInChildren<MeshRenderer>() == null)
                     {
-                        isSpentFlashbang = true;
+                        isDamagedOrSpent = true;
+                    }
+
+                    if (item is StunGrenadeItem grenade && (grenade.pinPulled || grenade.hasExploded || grenade.itemUsedUp))
+                    {
+                        isDamagedOrSpent = true;
                     }
                 }
 
-                if (item == null || isSpentFlashbang)
+                // Destroy shell & re-instantiate fresh object
+                if (item == null || isDamagedOrSpent)
                 {
                     if (item != null)
                     {
@@ -124,7 +132,11 @@ namespace ReturnByDeath.Patches
                     }
                 }
 
-                if (item == null) continue;
+                if (item == null)
+                {
+                    Debug.LogError($"[ReturnByDeath] Failed to recreate item: {savedData.ItemName}");
+                    continue;
+                }
 
                 item.deactivated = false;
                 item.itemUsedUp = false;
@@ -222,29 +234,49 @@ namespace ReturnByDeath.Patches
 
         private static GrabbableObject RecreatenAndSpawnItem(ScrapCheckpointData savedData, PlayerControllerB localPlayer)
         {
-            Item targetItemProperty = null;
+            Item targetItemProperty = savedData.SavedItemProperties;
 
-            // 1. Quét trong AllItemsList
-            if (StartOfRound.Instance != null && StartOfRound.Instance.allItemsList != null)
+            // 1. Direct saved reference check
+            if (targetItemProperty == null || targetItemProperty.spawnPrefab == null)
+            {
+                // 2. Terminal Buyable Items
+                Terminal terminal = UnityEngine.Object.FindObjectOfType<Terminal>();
+                if (terminal != null && terminal.buyableItemsList != null)
+                {
+                    targetItemProperty = Array.Find(terminal.buyableItemsList, x =>
+                        x != null && (x.itemId == savedData.ItemItemId ||
+                        string.Equals(x.itemName, savedData.ItemName, StringComparison.OrdinalIgnoreCase) ||
+                        (x.spawnPrefab != null && x.spawnPrefab.name.StartsWith("DiyFlashbang", StringComparison.OrdinalIgnoreCase))));
+                }
+            }
+
+            // 3. Search AllItemsList
+            if ((targetItemProperty == null || targetItemProperty.spawnPrefab == null) && StartOfRound.Instance != null && StartOfRound.Instance.allItemsList != null)
             {
                 targetItemProperty = StartOfRound.Instance.allItemsList.itemsList.Find(x =>
                     x != null && (x.itemId == savedData.ItemItemId ||
                     (savedData.ItemName != "Unknown" && string.Equals(x.itemName, savedData.ItemName, StringComparison.OrdinalIgnoreCase))));
             }
 
-            // 2. Quét trong BuyableItems của Terminal (Nơi chứa Flashbang, Walkie-talkie...)
-            if (targetItemProperty == null)
+            // 4. Global Resources Scan for Modded Assets (e.g. DiyFlashbang)
+            if (targetItemProperty == null || targetItemProperty.spawnPrefab == null)
             {
-                Terminal terminal = UnityEngine.Object.FindObjectOfType<Terminal>();
-                if (terminal != null && terminal.buyableItemsList != null)
-                {
-                    targetItemProperty = Array.Find(terminal.buyableItemsList, x =>
-                        x != null && (x.itemId == savedData.ItemItemId || string.Equals(x.itemName, savedData.ItemName, StringComparison.OrdinalIgnoreCase)));
-                }
+                Item[] allLoadedItems = Resources.FindObjectsOfTypeAll<Item>();
+                targetItemProperty = Array.Find(allLoadedItems, x =>
+                    x != null && x.spawnPrefab != null && (
+                        string.Equals(x.itemName, savedData.ItemName, StringComparison.OrdinalIgnoreCase) ||
+                        x.spawnPrefab.name.StartsWith("DiyFlashbang", StringComparison.OrdinalIgnoreCase) ||
+                        x.spawnPrefab.GetComponent<StunGrenadeItem>() != null
+                    ));
             }
 
-            if (targetItemProperty == null || targetItemProperty.spawnPrefab == null) return null;
+            if (targetItemProperty == null || targetItemProperty.spawnPrefab == null)
+            {
+                Debug.LogError($"[ReturnByDeath] Critical: Could not locate prefab for {savedData.ItemName}!");
+                return null;
+            }
 
+            // Instantiate fresh prefab with clean MeshRenderer and BoxCollider
             GameObject spawnedObj = UnityEngine.Object.Instantiate(
                 targetItemProperty.spawnPrefab,
                 localPlayer.localItemHolder.position,
@@ -268,6 +300,12 @@ namespace ReturnByDeath.Patches
 
                 grabbable.deactivated = false;
                 grabbable.itemUsedUp = false;
+
+                MeshRenderer mr = spawnedObj.GetComponentInChildren<MeshRenderer>();
+                if (mr != null) mr.enabled = true;
+
+                Collider col = spawnedObj.GetComponentInChildren<Collider>();
+                if (col != null) col.enabled = true;
 
                 NetworkObject netObj = spawnedObj.GetComponent<NetworkObject>();
                 if (netObj != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)

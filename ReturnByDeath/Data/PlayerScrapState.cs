@@ -94,7 +94,8 @@ namespace ReturnByDeath.Data
                 IsBeingUsed = item.isBeingUsed,
                 HasBattery = hasBattery,
                 BatteryCharge = hasBattery ? item.insertedBattery.charge : 1f,
-                IsBatteryEmpty = hasBattery ? item.insertedBattery.empty : false
+                IsBatteryEmpty = hasBattery ? item.insertedBattery.empty : false,
+                SavedItemProperties = item.itemProperties
             };
         }
     }

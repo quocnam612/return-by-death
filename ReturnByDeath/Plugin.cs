@@ -90,6 +90,7 @@ namespace ReturnByDeath
             harmony.PatchAll(typeof(HoarderBugPatch));
             harmony.PatchAll(typeof(GrabbableObjectPatch));
             harmony.PatchAll(typeof(EnemyAIPatch));
+            harmony.PatchAll(typeof(StunGrenadeItemPatch));
 
 
             LethalThingsPatch.Apply(harmony);

@@ -96,6 +96,7 @@
     <Compile Include="Patches\GrabbableObjectPatch.cs" />
     <Compile Include="Data\ScrapCheckpointData.cs" />
     <Compile Include="Data\PlayerScrapState.cs" />
+    <Compile Include="Patches\StunGrenadeItemPatch.cs" />
     <Compile Include="Plugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
